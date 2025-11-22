@@ -6,6 +6,7 @@ use App\Http\Controllers\SellerOnboardingController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProductPublicController;
+use App\Http\Controllers\ReviewController;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,6 +18,10 @@ Route::post('/register', [AuthController::class, 'register']);
 Route::post('/login',    [AuthController::class, 'login']);
 Route::post('/logout',   [AuthController::class, 'logout'])->middleware('api.auth');
 Route::get('/me',        [AuthController::class, 'me'])->middleware('api.auth');
+
+// Authenticated users review products
+Route::delete('/reviews/{review}', [ReviewController::class, 'destroy'])
+    ->middleware('api.auth');
 
 /*
 |--------------------------------------------------------------------------
@@ -60,3 +65,7 @@ Route::prefix('locations')->group(function () {
 Route::get('/products', [ProductPublicController::class, 'index']);
 Route::get('/products/search', [ProductPublicController::class, 'search']);
 Route::get('/products/{slug}', [ProductPublicController::class, 'show']);
+Route::get('/products/{slug}/reviews', [ReviewController::class, 'list']);
+Route::post('/products/{product}/reviews', [ReviewController::class, 'store']);
+Route::post('/reviews', [ReviewController::class, 'store']);
+
