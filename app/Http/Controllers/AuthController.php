@@ -37,7 +37,10 @@ class AuthController extends Controller
             return response()->json(['message' => 'Invalid credentials'], 401);
         }
 
-        $request->session()->regenerate();
+        // Only regenerate session if the request has a session (API requests may be stateless)
+        if ($request->hasSession()) {
+            $request->session()->regenerate();
+        }
 
         return response()->json(['message' => 'Logged in']);
     }
@@ -50,8 +53,12 @@ class AuthController extends Controller
     public function logout(Request $request)
     {
         Auth::guard('web')->logout();
-        $request->session()->invalidate();
-        $request->session()->regenerateToken();
+
+        // If request is stateful (has session), invalidate it. API clients may be stateless.
+        if ($request->hasSession()) {
+            $request->session()->invalidate();
+            $request->session()->regenerateToken();
+        }
 
         return response()->json(['message' => 'Logged out']);
     }

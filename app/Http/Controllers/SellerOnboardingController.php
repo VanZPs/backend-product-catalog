@@ -6,13 +6,15 @@ use App\Models\Seller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class SellerOnboardingController extends Controller
 {
     public function store(Request $request)
     {
         // VALIDASI 14 + 1 FIELD SESUAI SRS
-        $validated = $request->validate([
+        // Use Validator::make so we can return JSON errors reliably for API clients
+        $validator = Validator::make($request->all(), [
             'store_name'        => 'required|string|max:255',
             'store_description' => 'nullable|string',
 
@@ -36,6 +38,12 @@ class SellerOnboardingController extends Controller
             // FILE: Scan KTP (private)
             'ktp_file'          => 'required|image|mimes:jpg,jpeg,png|max:4096',
         ]);
+
+        if ($validator->fails()) {
+            return response()->json(['message' => 'Validation failed', 'errors' => $validator->errors()], 422);
+        }
+
+        $validated = $validator->validated();
 
         return DB::transaction(function () use ($request, $validated) {
 
