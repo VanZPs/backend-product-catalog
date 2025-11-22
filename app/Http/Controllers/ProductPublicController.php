@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
 
 class ProductPublicController extends Controller
 {
@@ -54,4 +55,62 @@ class ProductPublicController extends Controller
         ]);
     }
 
+
+    public function search(Request $request)
+    {
+        $query = Product::query();
+
+        // Apply is_active filter only if column exists (some installs don't have it)
+        if (Schema::hasColumn('products', 'is_active')) {
+            $query->where('is_active', true);
+        }
+
+        // Keyword search across name, description and category (case-insensitive)
+        if ($request->filled('q')) {
+            $q = mb_strtolower($request->q);
+            $query->where(function ($sub) use ($q) {
+                $sub->whereRaw('LOWER(name) LIKE ?', ["%{$q}%"])
+                    ->orWhereRaw('LOWER(description) LIKE ?', ["%{$q}%"])
+                    ->orWhereRaw('LOWER(category) LIKE ?', ["%{$q}%"]);
+            });
+        }
+
+        // Price filters
+        if ($request->filled('min_price')) {
+            $query->where('price', '>=', $request->min_price);
+        }
+
+        if ($request->filled('max_price')) {
+            $query->where('price', '<=', $request->max_price);
+        }
+
+        // Sorting
+        switch ($request->get('sort')) {
+            case 'price_asc':
+                $query->orderBy('price', 'asc');
+                break;
+
+            case 'price_desc':
+                $query->orderBy('price', 'desc');
+                break;
+
+            case 'newest':
+            default:
+                $query->orderBy('id', 'desc');
+                break;
+        }
+
+        // Return same public catalog fields and pagination as `index`
+        $products = $query->select(
+            'id',
+            'name',
+            'slug',
+            'price',
+            'images',
+            'created_at'
+        )
+        ->paginate(20);
+
+        return response()->json($products);
+    }
 }
