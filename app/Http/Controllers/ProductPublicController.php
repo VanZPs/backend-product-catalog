@@ -25,4 +25,33 @@ class ProductPublicController extends Controller
 
         return response()->json($products);
     }
+
+    public function show($slug)
+    {
+        $product = Product::where('slug', $slug)->first();
+
+        if (!$product) {
+            return response()->json([
+                'message' => 'Product not found'
+            ], 404);
+        }
+
+        return response()->json([
+            'id'          => $product->id,
+            'name'        => $product->name,
+            'slug'        => $product->slug,
+            'description' => $product->description,
+            'price'       => $product->price,
+            'stock'       => $product->stock,
+            'images'      => $product->images,
+            'seller'      => [
+                'id'          => $product->seller->id,
+                'store_name'  => $product->seller->store_name,
+                'city'        => $product->seller->city?->name,
+                'province'    => $product->seller->province?->name,
+            ],
+            'created_at'  => $product->created_at,
+        ]);
+    }
+
 }

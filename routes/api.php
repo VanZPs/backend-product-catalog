@@ -58,3 +58,4 @@ Route::prefix('locations')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::get('/products', [ProductPublicController::class, 'index']);
+Route::get('/products/{slug}', [ProductPublicController::class, 'show']);
