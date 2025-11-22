@@ -3,19 +3,19 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Notifications\Messages\MailMessage;
 
-class SellerApproved extends Notification implements ShouldQueue
+class SellerApproved extends Notification
 {
     use Queueable;
 
-    public function __construct($seller)
-    {
-        $this->seller = $seller;
-    }
-
+    /**
+     * Get the notification's delivery channels.
+     *
+     * @param  mixed  $notifiable
+     * @return array
+     */
     public function via($notifiable)
     {
         return ['mail'];
@@ -24,11 +24,10 @@ class SellerApproved extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         return (new MailMessage)
-            ->subject('Akun Seller Anda Telah Disetujui')
-            ->greeting('Halo ' . $notifiable->name . ' 👋')
-            ->line('Pengajuan akun seller Anda telah disetujui oleh tim admin.')
-            ->line('Anda sekarang dapat mulai mengelola toko & menambahkan produk.')
-            ->action('Buka Dashboard', url('/dashboard'))
-            ->line('Terima kasih telah bergabung!');
+            ->subject('Akun Seller Anda Disetujui')
+            ->greeting("Halo {$notifiable->name},")
+            ->line('Selamat! Akun seller Anda telah disetujui oleh tim kami.')
+            ->action('Aktivasi Akun', url('/activate-seller?user=' . $notifiable->id))
+            ->line('Terima kasih sudah bergabung sebagai seller.');
     }
 }

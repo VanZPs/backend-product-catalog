@@ -8,8 +8,7 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProductPublicController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\ReportController;
-use App\Http\Controllers\SellerVerificationController;
-use App\Http\Controllers\AdminSellerController;
+use App\Http\Controllers\Admin\AdminSellerController;
 
 /*
 |--------------------------------------------------------------------------
@@ -55,26 +54,19 @@ Route::middleware('api.auth')->prefix('seller')->group(function () {
 Route::get('/seller/report/pdf', [ReportController::class, 'sellerReport'])->middleware('api.auth');
 
 
-/*
-|--------------------------------------------------------------------------
-| ADMIN SELLER VERIFICATION
-|--------------------------------------------------------------------------
-*/
-Route::middleware(['auth'])->prefix('admin')->group(function () {
-    Route::post('/sellers/{id}/approve', [SellerVerificationController::class, 'approve']);
-    Route::post('/sellers/{id}/reject',   [SellerVerificationController::class, 'reject']);
-});
+// NOTE: seller verification routes are handled by admin controllers below
+// (removed duplicate group that referenced wrong namespace)
 
 /*
 |--------------------------------------------------------------------------
 | ADMIN SELLER MANAGEMENT
 |--------------------------------------------------------------------------
 */
-Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
+Route::middleware(['auth', 'api.auth'])->prefix('admin')->group(function () {
     Route::get('/sellers/pending', [AdminSellerController::class, 'pending']);
-    Route::get('/sellers/{id}', [AdminSellerController::class, 'show']);
-    Route::post('/sellers/{id}/approve', [AdminSellerController::class, 'approve']);
-    Route::post('/sellers/{id}/reject', [AdminSellerController::class, 'reject']);
+    Route::get('/sellers/{seller}', [AdminSellerController::class, 'show']);
+    Route::post('/sellers/{seller}/approve', [AdminSellerController::class, 'approve']);
+    Route::post('/sellers/{seller}/reject', [AdminSellerController::class, 'reject']);
 });
 
 

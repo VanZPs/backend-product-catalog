@@ -3,20 +3,19 @@
 namespace App\Notifications;
 
 use Illuminate\Bus\Queueable;
-use Illuminate\Contracts\Queue\ShouldQueue;
-use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Notifications\Messages\MailMessage;
 
-class SellerRejected extends Notification implements ShouldQueue
+class SellerRejected extends Notification
 {
     use Queueable;
 
-    public function __construct($seller, $reason)
-    {
-        $this->seller  = $seller;
-        $this->reason  = $reason;
-    }
-
+    /**
+     * Get the notification's delivery channels.
+     *
+     * @param  mixed  $notifiable
+     * @return array
+     */
     public function via($notifiable)
     {
         return ['mail'];
@@ -25,13 +24,9 @@ class SellerRejected extends Notification implements ShouldQueue
     public function toMail($notifiable)
     {
         return (new MailMessage)
-            ->subject('Pengajuan Akun Seller Ditolak')
-            ->greeting('Halo ' . $notifiable->name)
-            ->line('Mohon maaf, pengajuan akun seller Anda tidak dapat kami proses.')
-            ->line('Alasan penolakan:')
-            ->line('🛑 ' . $this->reason)
-            ->line('Silakan daftar ulang setelah memperbaiki data Anda.')
-            ->action('Daftar Ulang', url('/seller/register'))
-            ->line('Terima kasih.');
+            ->subject('Pendaftaran Seller Ditolak')
+            ->greeting("Halo {$notifiable->name},")
+            ->line('Maaf, pengajuan seller Anda tidak dapat kami setujui.')
+            ->line('Silakan lengkapi data dan coba daftar kembali.');
     }
 }
