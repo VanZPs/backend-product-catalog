@@ -8,6 +8,8 @@ use App\Http\Controllers\LocationController;
 use App\Http\Controllers\ProductPublicController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\SellerVerificationController;
+use App\Http\Controllers\AdminSellerController;
 
 /*
 |--------------------------------------------------------------------------
@@ -51,6 +53,30 @@ Route::middleware('api.auth')->prefix('seller')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::get('/seller/report/pdf', [ReportController::class, 'sellerReport'])->middleware('api.auth');
+
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN SELLER VERIFICATION
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth'])->prefix('admin')->group(function () {
+    Route::post('/sellers/{id}/approve', [SellerVerificationController::class, 'approve']);
+    Route::post('/sellers/{id}/reject',   [SellerVerificationController::class, 'reject']);
+});
+
+/*
+|--------------------------------------------------------------------------
+| ADMIN SELLER MANAGEMENT
+|--------------------------------------------------------------------------
+*/
+Route::middleware(['auth', 'admin'])->prefix('admin')->group(function () {
+    Route::get('/sellers/pending', [AdminSellerController::class, 'pending']);
+    Route::get('/sellers/{id}', [AdminSellerController::class, 'show']);
+    Route::post('/sellers/{id}/approve', [AdminSellerController::class, 'approve']);
+    Route::post('/sellers/{id}/reject', [AdminSellerController::class, 'reject']);
+});
+
 
 /*
 |--------------------------------------------------------------------------

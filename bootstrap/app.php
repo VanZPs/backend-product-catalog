@@ -10,6 +10,7 @@ use Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse;
 use Illuminate\Http\Middleware\HandleCors;
 
 use App\Http\Middleware\ApiAuthenticate;
+use App\Http\Middleware\AdminOnly;
 
 return Application::configure(basePath: dirname(__DIR__))
 
@@ -35,6 +36,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'auth.api' => ApiAuthenticate::class,
             'api.auth' => ApiAuthenticate::class,
+            'admin' => AdminOnly::class,
         ]);
 
         // Global CORS
