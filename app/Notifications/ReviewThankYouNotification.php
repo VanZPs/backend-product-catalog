@@ -7,16 +7,18 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 
-class ReviewThankYouNotification extends Notification
+class ReviewThankYouNotification extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    public $reviewSnapshot;
 
     /**
      * Create a new notification instance.
      */
-    public function __construct()
+    public function __construct(array $reviewSnapshot = [])
     {
-        //
+        $this->reviewSnapshot = $reviewSnapshot;
     }
 
     /**
@@ -34,10 +36,21 @@ class ReviewThankYouNotification extends Notification
      */
     public function toMail(object $notifiable): MailMessage
     {
-        return (new MailMessage)
-            ->line('The introduction to the notification.')
-            ->action('Notification Action', url('/'))
-            ->line('Thank you for using our application!');
+        $mail = (new MailMessage);
+
+        $mail->line('Terima kasih atas review Anda.');
+
+        if (!empty($this->reviewSnapshot['product_name'])) {
+            $mail->line('Produk: ' . $this->reviewSnapshot['product_name']);
+        }
+        if (!empty($this->reviewSnapshot['rating'])) {
+            $mail->line('Rating: ' . $this->reviewSnapshot['rating']);
+        }
+
+        $mail->action('Kunjungi Produk', url('/'))
+             ->line('Terima kasih sudah menggunakan aplikasi kami!');
+
+        return $mail;
     }
 
     /**

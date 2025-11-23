@@ -5,17 +5,19 @@ namespace App\Notifications;
 use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Notification;
 use Illuminate\Notifications\Messages\MailMessage;
+use Illuminate\Contracts\Queue\ShouldQueue;
 
-class SellerApproved extends Notification
+class SellerApproved extends Notification implements ShouldQueue
 {
     use Queueable;
 
-    /**
-     * Get the notification's delivery channels.
-     *
-     * @param  mixed  $notifiable
-     * @return array
-     */
+    public $sellerSnapshot;
+
+    public function __construct(array $sellerSnapshot = [])
+    {
+        $this->sellerSnapshot = $sellerSnapshot;
+    }
+
     public function via($notifiable)
     {
         return ['mail'];
@@ -23,11 +25,18 @@ class SellerApproved extends Notification
 
     public function toMail($notifiable)
     {
-        return (new MailMessage)
+        $mail = (new MailMessage)
             ->subject('Akun Seller Anda Disetujui')
             ->greeting("Halo {$notifiable->name},")
-            ->line('Selamat! Akun seller Anda telah disetujui oleh tim kami.')
-            ->action('Aktivasi Akun', url('/activate-seller?user=' . $notifiable->id))
-            ->line('Terima kasih sudah bergabung sebagai seller.');
+            ->line('Selamat! Akun seller Anda telah disetujui oleh tim kami.');
+
+        if (!empty($this->sellerSnapshot['company_name'])) {
+            $mail->line('Nama Perusahaan: ' . $this->sellerSnapshot['company_name']);
+        }
+
+        $mail->action('Aktivasi Akun', url('/activate-seller?user=' . $notifiable->id))
+             ->line('Terima kasih sudah bergabung sebagai seller.');
+
+        return $mail;
     }
 }

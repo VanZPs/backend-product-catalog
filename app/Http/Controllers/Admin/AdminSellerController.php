@@ -41,11 +41,17 @@ class AdminSellerController extends Controller
             'verified_at' => now(),
         ]);
 
-        // Kirim email ke user (jaga kalau user bernilai null atau terjadi error saat mengirim)
+        // Kirim email ke user (gunakan snapshot primitif sehingga aman untuk queued jobs)
         $seller->load('user');
         try {
             if ($seller->user) {
-                $seller->user->notify(new SellerApproved());
+                $sellerSnapshot = [
+                    'seller_id' => $seller->id,
+                    'company_name' => $seller->company_name ?? null,
+                    'user_id' => $seller->user ? $seller->user->id : null,
+                ];
+
+                $seller->user->notify(new SellerApproved($sellerSnapshot));
             } else {
                 Log::warning('Seller approved but related user not found', ['seller_id' => $seller->id]);
             }
@@ -71,10 +77,20 @@ class AdminSellerController extends Controller
         }
 
         // Load user relation and store file paths before deleting
+        // Also capture rejection reason and a small snapshot of seller data
         $seller->load('user');
         $user = $seller->user;
         $ktpFilePath = $seller->ktp_file_path;
         $picFilePath = $seller->pic_file_path;
+
+        // Capture reason and a primitive snapshot (safe to serialize for queued jobs)
+        $reason = $request->input('reason');
+        $sellerSnapshot = [
+            'company_name' => $seller->company_name ?? null,
+            'registration_number' => $seller->registration_number ?? null,
+            'ktp_file_path' => $ktpFilePath ?? null,
+            'pic_file_path' => $picFilePath ?? null,
+        ];
 
         Log::info('About to run reject transaction', ['seller_id' => $seller->id, 'user_id' => $user ? $user->id : null]);
 
@@ -104,7 +120,8 @@ class AdminSellerController extends Controller
         // Notify user after transaction (outside transaction)
         try {
             if ($user) {
-                $user->notify(new SellerRejected());
+                // Send primitives (reason + snapshot) so queued jobs still have data
+                $user->notify(new SellerRejected($reason, $sellerSnapshot));
             } else {
                 Log::warning('Seller rejected but related user not found (post-delete)', ['seller_id' => $seller->id]);
             }
