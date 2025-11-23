@@ -6,6 +6,9 @@ use App\Models\Product;
 use App\Models\Review;
 use Illuminate\Http\Request;
 use Laravolt\Indonesia\Models\Provinsi;
+use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Log;
+use App\Notifications\ReviewThankYouNotification;
 
 class ReviewController extends Controller
 {
@@ -39,6 +42,16 @@ class ReviewController extends Controller
         ]);
 
         $review = Review::create($validated);
+
+        // Load product relation for snapshot and notify reviewer via email
+        $review->load('product');
+        try {
+            Notification::route('mail', $review->email)
+                ->notify(new ReviewThankYouNotification($review->toSnapshot()));
+        } catch (\Throwable $e) {
+            Log::error('Failed to send ReviewThankYouNotification', ['review_id' => $review->id, 'error' => $e->getMessage()]);
+            // continue silently; review has been saved
+        }
 
         return response()->json([
             'message' => 'Review submitted successfully',
