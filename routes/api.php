@@ -9,6 +9,7 @@ use App\Http\Controllers\ProductPublicController;
 use App\Http\Controllers\ReviewController;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\Admin\AdminSellerController;
+use App\Http\Controllers\SellerDashboardController;
 
 /*
 |--------------------------------------------------------------------------
@@ -54,6 +55,15 @@ Route::middleware('api.auth')->prefix('seller')->group(function () {
 |--------------------------------------------------------------------------
 */
 Route::get('/seller/report/pdf', [ReportController::class, 'sellerReport'])->middleware('api.auth');
+
+/*
+|--------------------------------------------------------------------------
+| SELLER DASHBOARD
+|--------------------------------------------------------------------------
+*/ 
+Route::middleware(['auth'])->group(function () {
+    Route::get('/seller/dashboard', [SellerDashboardController::class, 'overview']);
+});
 
 
 // NOTE: seller verification routes are handled by admin controllers below
