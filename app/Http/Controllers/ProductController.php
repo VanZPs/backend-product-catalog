@@ -6,6 +6,7 @@ use App\Models\Product;
 use App\Models\Seller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class ProductController extends Controller
@@ -36,7 +37,7 @@ class ProductController extends Controller
      */
     public function store(Request $request)
     {
-        $seller = Seller::where('user_id', $request->user()->id)->firstOrFail();
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
 
         $validated = $request->validate([
             'name'        => 'required|string|max:255',
@@ -45,7 +46,8 @@ class ProductController extends Controller
             'price'       => 'required|numeric|min:0',
             'stock'       => 'required|integer|min:0',
 
-            'images'      => 'nullable|array',
+            // Enforce at least 2 images per SRS (primary + secondary)
+            'images'      => 'required|array|min:2',
             'images.*'    => 'image|mimes:jpg,jpeg,png|max:2048',
         ]);
 
@@ -66,7 +68,7 @@ class ProductController extends Controller
         }
 
         $product = Product::create([
-            'seller_id'   => $seller->id,
+            'seller_id'   => $seller->seller_id,
             'name'        => $validated['name'],
             'slug'        => $slug,
             'description' => $validated['description'] ?? null,
@@ -74,7 +76,11 @@ class ProductController extends Controller
             'stock'       => $validated['stock'],
             'category'    => $validated['category'] ?? null,
             'images'      => $imagePaths,
+            'primary_image' => count($imagePaths) ? $imagePaths[0] : null,
         ]);
+
+        // Bump cache version so public listings reflect new product
+        try { Cache::increment('products_cache_version'); } catch (\Exception $e) { Cache::put('products_cache_version', 1); }
 
         return response()->json([
             'message' => 'Product created',
@@ -87,9 +93,9 @@ class ProductController extends Controller
      */
     public function show(Request $request, Product $product)
     {
-        $seller = Seller::where('user_id', $request->user()->id)->firstOrFail();
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
 
-        if ($product->seller_id !== $seller->id) {
+        if ($product->seller_id !== $seller->seller_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -102,9 +108,9 @@ class ProductController extends Controller
      */
     public function update(Request $request, Product $product)
     {
-        $seller = Seller::where('user_id', $request->user()->id)->firstOrFail();
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
 
-        if ($product->seller_id !== $seller->id) {
+        if ($product->seller_id !== $seller->seller_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -114,8 +120,8 @@ class ProductController extends Controller
             'category'    => 'nullable|string|max:100',
             'price'       => 'nullable|numeric|min:0',
             'stock'       => 'nullable|integer|min:0',
-
-            'images'      => 'nullable|array',
+            // If images are provided on update, enforce min 2 to satisfy SRS
+            'images'      => 'nullable|array|min:2',
             'images.*'    => 'image|mimes:jpg,jpeg,png|max:2048',
             'is_active'   => 'nullable|boolean',
         ]);
@@ -148,7 +154,10 @@ class ProductController extends Controller
                 $newFiles[] = '/storage/' . $path;
             }
 
-            $product->update(['images' => $newFiles]);
+                $product->update(['images' => $newFiles, 'primary_image' => count($newFiles) ? $newFiles[0] : null]);
+
+                // Invalidate public cache
+                try { Cache::increment('products_cache_version'); } catch (\Exception $e) { Cache::put('products_cache_version', 1); }
         }
 
         return response()->json([
@@ -162,9 +171,9 @@ class ProductController extends Controller
      */
     public function destroy(Request $request, Product $product)
     {
-        $seller = Seller::where('user_id', $request->user()->id)->firstOrFail();
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
 
-        if ($product->seller_id !== $seller->id) {
+        if ($product->seller_id !== $seller->seller_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -176,7 +185,10 @@ class ProductController extends Controller
             }
         }
 
-        $product->delete();
+            $product->delete();
+
+            // Invalidate public cache
+            try { Cache::increment('products_cache_version'); } catch (\Exception $e) { Cache::put('products_cache_version', 1); }
 
         return response()->json(['message' => 'Product deleted']);
     }
@@ -186,9 +198,9 @@ class ProductController extends Controller
      */
     public function deactivate(Request $request, Product $product)
     {
-        $seller = Seller::where('user_id', $request->user()->id)->firstOrFail();
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
 
-        if ($product->seller_id !== $seller->id) {
+        if ($product->seller_id !== $seller->seller_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
@@ -202,9 +214,9 @@ class ProductController extends Controller
      */
     public function activate(Request $request, Product $product)
     {
-        $seller = Seller::where('user_id', $request->user()->id)->firstOrFail();
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
 
-        if ($product->seller_id !== $seller->id) {
+        if ($product->seller_id !== $seller->seller_id) {
             return response()->json(['message' => 'Unauthorized'], 403);
         }
 
