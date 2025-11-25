@@ -6,6 +6,7 @@ use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 
 class ProductPublicController extends Controller
 {
@@ -19,18 +20,21 @@ class ProductPublicController extends Controller
         $cacheKey = "products:index:v{$version}:page:{$request->get('page',1)}";
 
         $products = Cache::remember($cacheKey, 60, function () use ($request) {
+            $idColumn = Schema::hasColumn('products', 'product_id') ? 'product_id' : 'id';
+            $selectId = $idColumn === 'product_id' ? 'product_id' : DB::raw('id as product_id');
+
             return Product::withAvg('reviews', 'rating')
-            ->select(
-                'product_id',
-                'name',
-                'slug',
-                'price',
-                'images',
-                'primary_image',
-                'created_at'
-            )
-            ->orderBy('product_id', 'desc')
-            ->paginate(20);
+                ->select(
+                    $selectId,
+                    'name',
+                    'slug',
+                    'price',
+                    'images',
+                    'primary_image',
+                    'created_at'
+                )
+                ->orderBy($idColumn, 'desc')
+                ->paginate(20);
         });
 
         // Normalize average rating into `average_rating` float
@@ -46,7 +50,15 @@ class ProductPublicController extends Controller
     {
         $product = Product::where('slug', $slug)->firstOrFail();
 
-        $product->increment('visitor');
+        // only increment if the visitor column exists (defensive for mixed migration states)
+        if (Schema::hasColumn('products', 'visitor')) {
+            try {
+                $product->increment('visitor');
+            } catch (\Exception $e) {
+                // swallow increment errors to avoid 500 on read
+                logger()->warning('Could not increment product visitor', ['id' => $product->getKey(), 'error' => $e->getMessage()]);
+            }
+        }
 
         if (!$product) {
             return response()->json([
