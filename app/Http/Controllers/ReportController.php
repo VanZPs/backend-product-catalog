@@ -6,12 +6,14 @@ use App\Models\Product;
 use App\Models\Seller;
 use Illuminate\Http\Request;
 use Dompdf\Dompdf;
+use App\Models\Review;
+use Illuminate\Support\Facades\DB;
 
 class ReportController extends Controller
 {
     public function sellerReport(Request $request)
     {
-        $seller = Seller::where('user_id', $request->user()->id)
+        $seller = Seller::where('user_id', $request->user()->user_id)
             ->with([
                 'products' => function ($q) {
                     $q->select('id', 'seller_id', 'name', 'price', 'stock');
@@ -31,5 +33,149 @@ class ReportController extends Controller
         return response($dompdf->output(), 200)
             ->header('Content-Type', 'application/pdf')
             ->header('Content-Disposition', 'inline; filename="seller-report.pdf"');
+    }
+
+    // ADMIN: platform sellers report (PDF or JSON)
+    public function platformSellersReport(Request $request)
+    {
+        $status = $request->query('status');
+
+        $query = Seller::with('user')
+            ->select('id','user_id','store_name','status','is_active','province_id');
+
+        if ($status) {
+            $query->where('status', $status);
+        }
+
+        $sellers = $query->get();
+
+        // If PDF requested, render PDF
+        if ($request->query('format') === 'pdf') {
+            $html = view('pdf.admin-sellers', ['sellers' => $sellers])->render();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+
+            return response($dompdf->output(), 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="platform-sellers.pdf"');
+        }
+
+        return response()->json(['sellers' => $sellers]);
+    }
+
+    public function platformSellersByProvinceReport(Request $request)
+    {
+        $data = Seller::select('province_id', DB::raw('COUNT(*) as total'))
+            ->groupBy('province_id')
+            ->get();
+
+        if ($request->query('format') === 'pdf') {
+            $html = view('pdf.admin-sellers-by-province', ['data' => $data])->render();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+
+            return response($dompdf->output(), 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="sellers-by-province.pdf"');
+        }
+
+        return response()->json($data);
+    }
+
+    public function platformTopRatedProductsReport(Request $request)
+    {
+        $data = Product::with('seller')
+            ->select('products.product_id','products.name','products.category','products.price','products.seller_id', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
+            ->leftJoin('reviews', 'reviews.product_id', '=', 'products.product_id')
+            ->groupBy('products.product_id','products.name','products.category','products.price','products.seller_id')
+            ->orderByDesc('avg_rating')
+            ->get();
+
+        if ($request->query('format') === 'pdf') {
+            $html = view('pdf.admin-top-rated-products', ['data' => $data])->render();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+
+            return response($dompdf->output(), 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="top-rated-products.pdf"');
+        }
+
+        return response()->json($data);
+    }
+
+    // Seller specific reports (JSON for MVP)
+    public function sellerStockReport(Request $request)
+    {
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
+        $data = Product::where('seller_id', $seller->seller_id)
+            ->select('products.product_id','products.name','products.category','products.price','products.stock', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
+            ->leftJoin('reviews','reviews.product_id','=','products.product_id')
+            ->groupBy('products.product_id','products.name','products.category','products.price','products.stock')
+            ->orderByDesc('stock')
+            ->get();
+
+        if ($request->query('format') === 'pdf') {
+            $html = view('pdf.seller-stock-report', ['seller' => $seller, 'data' => $data])->render();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+
+            return response($dompdf->output(), 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="seller-stock-report.pdf"');
+        }
+
+        return response()->json($data);
+    }
+
+    public function sellerTopRatedReport(Request $request)
+    {
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
+        $data = Product::where('seller_id', $seller->seller_id)
+            ->select('products.product_id','products.name','products.category','products.price','products.stock', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
+            ->leftJoin('reviews','reviews.product_id','=','products.product_id')
+            ->groupBy('products.product_id','products.name','products.category','products.price','products.stock')
+            ->orderByDesc('avg_rating')
+            ->get();
+
+        if ($request->query('format') === 'pdf') {
+            $html = view('pdf.seller-top-rated-report', ['seller' => $seller, 'data' => $data])->render();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+
+            return response($dompdf->output(), 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="seller-top-rated-report.pdf"');
+        }
+
+        return response()->json($data);
+    }
+
+    public function sellerRestockReport(Request $request)
+    {
+        $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
+        $data = Product::where('seller_id', $seller->seller_id)
+            ->where('stock', '<', 2)
+            ->select('name','category','price','stock')
+            ->orderBy('stock','asc')
+            ->get();
+
+        if ($request->query('format') === 'pdf') {
+            $html = view('pdf.seller-restock-report', ['seller' => $seller, 'data' => $data])->render();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->render();
+
+            return response($dompdf->output(), 200)
+                ->header('Content-Type', 'application/pdf')
+                ->header('Content-Disposition', 'inline; filename="seller-restock-report.pdf"');
+        }
+
+        return response()->json($data);
     }
 }
