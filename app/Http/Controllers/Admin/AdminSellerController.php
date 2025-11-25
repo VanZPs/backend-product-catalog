@@ -4,140 +4,206 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Seller;
-use App\Models\User;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 use App\Notifications\SellerApproved;
 use App\Notifications\SellerRejected;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
-use Illuminate\Http\Request;
 
 class AdminSellerController extends Controller
 {
-    // List all sellers
-    public function index()
+    // List all sellers (with optional status filter)
+    public function index(Request $request)
     {
-        $sellers = Seller::with('user')->get();
+        $q = Seller::with('user:id,name,email')
+            ->select('id', 'user_id', 'store_name', 'status', 'is_active', 'created_at')
+            ->orderBy('created_at', 'desc');
 
-        return response()->json($sellers);
+        if ($status = $request->query('status')) {
+            $q->where('status', $status);
+        }
+
+        return $q->paginate(20);
     }
 
     // List pending sellers
     public function pending()
     {
-        $pending = Seller::where('status', 'pending')->get();
-
-        return response()->json($pending);
+        return Seller::with(['user', 'province', 'city', 'district', 'village'])
+            ->where('status', 'pending')
+            ->orderBy('created_at', 'asc')
+            ->get();
     }
 
-    // Show single seller
+    // Show seller details
     public function show(Seller $seller)
     {
-        $seller->load('user');
-        return response()->json($seller);
+        return $seller->load(['user', 'province', 'city', 'district', 'village']);
     }
 
     // Approve seller
     public function approve(Request $request, Seller $seller)
     {
-        if ($seller->status !== 'pending') {
-            return response()->json(['message' => 'Already processed'], 409);
-        }
+        return DB::transaction(function () use ($seller) {
+            // Mark as approved by admin but require the seller to verify via email click
+            $seller->status = 'approved';
+            $seller->verified_at = null; // will be set when seller clicks verification link
+            $seller->is_active = false;
+            $seller->rejection_reason = null;
+            $seller->save();
 
-        $seller->update([
-            'status' => 'approved',
-            'verified_at' => now(),
-        ]);
+            // Generate temporary signed verification link
+            $signedUrl = \URL::temporarySignedRoute(
+                'seller.verify', now()->addDays(7), ['seller' => $seller->seller_id]
+            );
 
-        // Kirim email ke user (gunakan snapshot primitif sehingga aman untuk queued jobs)
-        $seller->load('user');
-        try {
-            if ($seller->user) {
-                $sellerSnapshot = [
-                    'seller_id' => $seller->id,
-                    'company_name' => $seller->company_name ?? null,
-                    'user_id' => $seller->user ? $seller->user->id : null,
-                ];
-
-                $seller->user->notify(new SellerApproved($sellerSnapshot));
-            } else {
-                Log::warning('Seller approved but related user not found', ['seller_id' => $seller->id]);
+            // Notify user with signed link
+            try {
+                $user = $seller->user;
+                if ($user) {
+                    $user->notify(new SellerApproved([
+                        'company_name' => $seller->store_name,
+                    ], $signedUrl));
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send seller approved notification: ' . $e->getMessage());
             }
-        } catch (\Throwable $e) {
-            Log::error('Failed to send SellerApproved notification', ['seller_id' => $seller->id, 'error' => $e->getMessage()]);
-            // Return success untuk tindakan approve tetapi indikasi kegagalan notifikasi
-            return response()->json(['message' => 'Seller approved, but notification failed'], 200);
-        }
 
-        return response()->json(['message' => 'Seller approved', 'seller' => $seller]);
+            return response()->json(['message' => 'Seller approved (awaiting verification)', 'seller' => $seller]);
+        });
     }
 
-    // Reject seller
+    // Reject seller with optional reason
     public function reject(Request $request, Seller $seller)
     {
-        Log::info('AdminSellerController@reject called', ['seller_id' => $seller->id, 'seller_status' => $seller->status]);
         $request->validate([
-            'reason' => 'required|string',
+            'reason' => 'nullable|string|max:1000',
         ]);
 
-        if ($seller->status !== 'pending') {
-            return response()->json(['message' => 'Already processed'], 409);
-        }
-
-        // Load user relation and store file paths before deleting
-        // Also capture rejection reason and a small snapshot of seller data
-        $seller->load('user');
-        $user = $seller->user;
-        $ktpFilePath = $seller->ktp_file_path;
-        $picFilePath = $seller->pic_file_path;
-
-        // Capture reason and a primitive snapshot (safe to serialize for queued jobs)
         $reason = $request->input('reason');
-        $sellerSnapshot = [
-            'company_name' => $seller->company_name ?? null,
-            'registration_number' => $seller->registration_number ?? null,
-            'ktp_file_path' => $ktpFilePath ?? null,
-            'pic_file_path' => $picFilePath ?? null,
-        ];
+        return DB::transaction(function () use ($seller, $reason) {
+            // Create an audit snapshot before deleting
+            $auditData = [
+                'seller_id' => $seller->seller_id ?? null,
+                'user_id' => $seller->user?->user_id ?? null,
+                'reason' => $reason,
+                'seller_snapshot' => json_encode($seller->toArray()),
+                'user_snapshot' => json_encode($seller->user?->toArray() ?? []),
+            ];
 
-        Log::info('About to run reject transaction', ['seller_id' => $seller->id, 'user_id' => $user ? $user->id : null]);
-
-        // Use transaction to revert user role and delete seller safely
-        DB::transaction(function () use ($seller, $user, $request) {
-            if ($user) {
-                $user->role = 'customer';
-                $user->save();
-                Log::info('User role reverted to customer', ['user_id' => $user->id]);
+            // Insert into rejection audits table
+            try {
+                DB::table('seller_rejection_audits')->insert([
+                    'seller_id' => $auditData['seller_id'],
+                    'user_id' => $auditData['user_id'],
+                    'reason' => $auditData['reason'],
+                    'seller_snapshot' => $auditData['seller_snapshot'],
+                    'user_snapshot' => $auditData['user_snapshot'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Failed to write seller rejection audit: ' . $e->getMessage());
             }
 
-            // Force delete seller record (permanent deletion)
-            $seller->forceDelete();
-            Log::info('Seller force deleted inside transaction', ['seller_id' => $seller->id]);
+            // Notify user about rejection (inform them their data is removed)
+            try {
+                $user = $seller->user;
+                if ($user) {
+                    $user->notify(new SellerRejected($reason, [
+                        'company_name' => $seller->store_name,
+                    ]));
+                }
+            } catch (\Exception $e) {
+                Log::error('Failed to send seller rejected notification: ' . $e->getMessage());
+            }
+
+            // Attempt to delete files (ktp on local, pic on public)
+            try {
+                if ($seller->ktp_file_path && \Storage::disk('local')->exists($seller->ktp_file_path)) {
+                    \Storage::disk('local')->delete($seller->ktp_file_path);
+                }
+                if ($seller->pic_file_path && \Storage::disk('public')->exists($seller->pic_file_path)) {
+                    \Storage::disk('public')->delete($seller->pic_file_path);
+                }
+            } catch (\Throwable $e) {
+                Log::warning('Failed to delete seller files on reject: ' . $e->getMessage());
+            }
+
+            // Delete seller and the associated user so the email can be reused
+            try {
+                $user = $seller->user;
+                $seller->delete();
+                if ($user) {
+                    $user->delete();
+                }
+            } catch (\Throwable $e) {
+                Log::error('Failed to delete seller/user after rejection: ' . $e->getMessage());
+                throw $e;
+            }
+
+            return response()->json(['message' => 'Seller rejected and data removed']);
         });
+    }
 
-        // Delete uploaded files from disk (outside transaction)
-        if ($ktpFilePath && Storage::disk('public')->exists($ktpFilePath)) {
-            Storage::disk('public')->delete($ktpFilePath);
-            Log::info('Deleted KTP file', ['path' => $ktpFilePath]);
-        }
-        if ($picFilePath && Storage::disk('public')->exists($picFilePath)) {
-            Storage::disk('public')->delete($picFilePath);
-            Log::info('Deleted PIC file', ['path' => $picFilePath]);
-        }
-
-        // Notify user after transaction (outside transaction)
-        try {
-            if ($user) {
-                // Send primitives (reason + snapshot) so queued jobs still have data
-                $user->notify(new SellerRejected($reason, $sellerSnapshot));
-            } else {
-                Log::warning('Seller rejected but related user not found (post-delete)', ['seller_id' => $seller->id]);
-            }
-        } catch (\Throwable $e) {
-            Log::error('Failed to send SellerRejected notification', ['seller_id' => $seller->id, 'error' => $e->getMessage()]);
-            return response()->json(['message' => 'Seller rejected and deleted, but notification failed'], 200);
+    /**
+     * Public signed verification endpoint. When clicked from email, finalize verification.
+     */
+    public function verify(Request $request)
+    {
+        if (! $request->hasValidSignature()) {
+            return response()->json(['message' => 'Invalid or expired verification link'], 403);
         }
 
-        return response()->json(['message' => 'Seller rejected and deleted', 'user' => $user]);
+        $sellerId = $request->query('seller');
+        $seller = Seller::where('seller_id', $sellerId)->first();
+        if (! $seller) {
+            return response()->json(['message' => 'Seller not found'], 404);
+        }
+
+        $seller->verified_at = now();
+        $seller->is_active = true;
+        $seller->status = 'active';
+        $seller->save();
+
+        // Redirect to frontend verification success (or return json)
+        $redirect = config('app.url') . '/seller/verified?seller=' . $seller->seller_id;
+        return response()->json(['message' => 'Seller verified', 'redirect_url' => $redirect]);
+    }
+
+    // Stream KTP file (private disk) for admin preview
+    public function ktpFile(Seller $seller)
+    {
+        if (!$seller->ktp_file_path) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $disk = Storage::disk('local');
+        if (!$disk->exists($seller->ktp_file_path)) {
+            return response()->json(['message' => 'File not found'], 404);
+        }
+
+        $path = $disk->path($seller->ktp_file_path);
+        $mime = mime_content_type($path);
+        return response()->file($path, ['Content-Type' => $mime]);
+    }
+
+    // Stream PIC file (public disk) for admin preview
+    public function picFile(Seller $seller)
+    {
+        if (!$seller->pic_file_path) {
+            return response()->json(['message' => 'Not found'], 404);
+        }
+
+        $disk = Storage::disk('public');
+        if (!$disk->exists($seller->pic_file_path)) {
+            return response()->json(['message' => 'File not found'], 404);
+        }
+
+        $path = $disk->path($seller->pic_file_path);
+        $mime = mime_content_type($path);
+        return response()->file($path, ['Content-Type' => $mime]);
     }
 }

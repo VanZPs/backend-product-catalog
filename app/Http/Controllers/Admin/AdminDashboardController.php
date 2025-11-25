@@ -10,6 +10,8 @@ use App\Models\Review;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
+use Illuminate\Support\Facades\Log;
+
 class AdminDashboardController extends Controller
 {
     public function stats()
@@ -65,5 +67,51 @@ class AdminDashboardController extends Controller
     public function index(Request $request)
     {
         return $this->stats();
+    }
+
+    /**
+     * Chart data: products grouped by category
+     */
+    public function productsByCategory()
+    {
+        $data = Product::select('category', DB::raw('count(*) as total'))
+            ->groupBy('category')
+            ->get();
+
+        return response()->json($data);
+    }
+
+    /**
+     * Chart data: sellers grouped by province
+     */
+    public function sellersByProvince()
+    {
+        $data = Seller::select('province_id', DB::raw('count(*) as total'))
+            ->groupBy('province_id')
+            ->get();
+
+        return response()->json($data);
+    }
+
+    public function sellersStatus()
+    {
+        $total = Seller::count();
+        $pending = Seller::where('status', 'pending')->count();
+        $approved = Seller::where('status', 'approved')->count();
+        $rejected = Seller::where('status', 'rejected')->count();
+
+        return response()->json([
+            'total' => $total,
+            'pending' => $pending,
+            'approved' => $approved,
+            'rejected' => $rejected,
+        ]);
+    }
+
+    public function totalReviewers()
+    {
+        // Count distinct reviewer emails
+        $count = Review::select('email')->distinct()->count('email');
+        return response()->json(['total_reviewers' => $count]);
     }
 }
