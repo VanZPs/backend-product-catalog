@@ -8,6 +8,8 @@ use Illuminate\Http\Request;
 use Laravolt\Indonesia\Models\Provinsi;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Validation\Rule;
 use App\Notifications\ReviewThankYouNotification;
 
 class ReviewController extends Controller
@@ -32,14 +34,34 @@ class ReviewController extends Controller
      */
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'product_id'  => 'required|exists:products,id',
+        $rules = [
+            'product_id'  => 'required|exists:products,product_id',
             'name'        => 'required|string|max:100',
-            'email'       => 'required|email',
-            'province_id' => 'required|exists:indonesia_provinces,id',
+            'email'       => ['required','email'],
+            'province_id' => 'required|exists:indonesia_provinces,code',
             'rating'      => 'required|integer|min:1|max:5',
             'comment'     => 'nullable|string|max:500',
-        ]);
+        ];
+
+        // Enforce uniqueness per product for email and phone (if present)
+        $productId = $request->input('product_id');
+
+        $rules['email'][] = Rule::unique('reviews')->where(function ($query) use ($productId) {
+            return $query->where('product_id', $productId);
+        });
+
+        if (Schema::hasColumn('reviews', 'phone')) {
+            $rules['phone'] = [
+                'nullable',
+                'string',
+                'max:32',
+                Rule::unique('reviews')->where(function ($query) use ($productId) {
+                    return $query->where('product_id', $productId);
+                }),
+            ];
+        }
+
+        $validated = $request->validate($rules);
 
         $review = Review::create($validated);
 
@@ -49,14 +71,12 @@ class ReviewController extends Controller
             Notification::route('mail', $review->email)
                 ->notify(new ReviewThankYouNotification($review->toSnapshot()));
         } catch (\Throwable $e) {
-            Log::error('Failed to send ReviewThankYouNotification', ['review_id' => $review->id, 'error' => $e->getMessage()]);
+            Log::error('Failed to send ReviewThankYouNotification', ['review_id' => $review->review_id ?? null, 'error' => $e->getMessage()]);
             // continue silently; review has been saved
         }
 
-        return response()->json([
-            'message' => 'Review submitted successfully',
-            'review'  => $review
-        ], 201);
+        // Return the review as top-level JSON (tests expect keys like review_id at root)
+        return response()->json($review, 201);
     }
 
     /**
