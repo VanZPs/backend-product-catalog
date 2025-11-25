@@ -11,6 +11,9 @@ use Illuminate\Http\Middleware\HandleCors;
 
 use App\Http\Middleware\ApiAuthenticate;
 use App\Http\Middleware\AdminOnly;
+use App\Http\Middleware\RoleMiddleware;
+use App\Http\Middleware\SellerActiveMiddleware;
+use App\Http\Middleware\ReviewThrottle;
 
 return Application::configure(basePath: dirname(__DIR__))
 
@@ -37,6 +40,9 @@ return Application::configure(basePath: dirname(__DIR__))
             'auth.api' => ApiAuthenticate::class,
             'api.auth' => ApiAuthenticate::class,
             'admin' => AdminOnly::class,
+            'role' => RoleMiddleware::class,
+            'seller.active' => SellerActiveMiddleware::class,
+            'review.throttle' => ReviewThrottle::class,
         ]);
 
         // Global CORS
