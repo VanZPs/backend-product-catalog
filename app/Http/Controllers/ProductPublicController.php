@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Cache;
 
 class ProductPublicController extends Controller
 {
@@ -13,16 +14,30 @@ class ProductPublicController extends Controller
      */
     public function index(Request $request)
     {
-        $products = Product::select(
-            'id',
-            'name',
-            'slug',
-            'price',
-            'images',
-            'created_at'
-        )
-        ->orderBy('id', 'desc')
-        ->paginate(20);
+        $version = Cache::get('products_cache_version', 1);
+
+        $cacheKey = "products:index:v{$version}:page:{$request->get('page',1)}";
+
+        $products = Cache::remember($cacheKey, 60, function () use ($request) {
+            return Product::withAvg('reviews', 'rating')
+            ->select(
+                'product_id',
+                'name',
+                'slug',
+                'price',
+                'images',
+                'primary_image',
+                'created_at'
+            )
+            ->orderBy('product_id', 'desc')
+            ->paginate(20);
+        });
+
+        // Normalize average rating into `average_rating` float
+        $products->getCollection()->transform(function ($p) {
+            $p->average_rating = $p->reviews_avg_rating ? round((float) $p->reviews_avg_rating, 2) : null;
+            return $p;
+        });
 
         return response()->json($products);
     }
@@ -40,7 +55,7 @@ class ProductPublicController extends Controller
         }
 
         return response()->json([
-            'id'          => $product->id,
+            'product_id'  => $product->product_id,
             'name'        => $product->name,
             'slug'        => $product->slug,
             'description' => $product->description,
@@ -48,7 +63,7 @@ class ProductPublicController extends Controller
             'stock'       => $product->stock,
             'images'      => $product->images,
             'seller'      => [
-                'id'          => $product->seller->id,
+                'seller_id'   => $product->seller->seller_id,
                 'store_name'  => $product->seller->store_name,
                 'city'        => $product->seller->city?->name,
                 'province'    => $product->seller->province?->name,
@@ -65,6 +80,27 @@ class ProductPublicController extends Controller
         // is_active filter
         if (Schema::hasColumn('products', 'is_active')) {
             $query->where('is_active', true);
+        }
+
+        // Filter by seller store_name (case-insensitive)
+        if ($request->filled('store_name')) {
+            $q = mb_strtolower($request->store_name);
+            $query->whereHas('seller', function ($sq) use ($q) {
+                $sq->whereRaw('LOWER(store_name) LIKE ?', ["%{$q}%"]);
+            });
+        }
+
+        // Filter by seller province_id and city_id
+        if ($request->filled('province_id')) {
+            $query->whereHas('seller', function ($sq) use ($request) {
+                $sq->where('province_id', $request->province_id);
+            });
+        }
+
+        if ($request->filled('city_id')) {
+            $query->whereHas('seller', function ($sq) use ($request) {
+                $sq->where('city_id', $request->city_id);
+            });
         }
 
         // Keyword search berdasarkan name, description, category (case-insensitive)
@@ -98,20 +134,33 @@ class ProductPublicController extends Controller
 
             case 'newest':
             default:
-                $query->orderBy('id', 'desc');
+            $query->orderBy('product_id', 'desc');
                 break;
         }
 
         // Mengembalikan fields katalog publik yang sama dan paginasi seperti `index`
-        $products = $query->select(
-            'id',
-            'name',
-            'slug',
-            'price',
-            'images',
-            'created_at'
-        )
-        ->paginate(20);
+        $version = Cache::get('products_cache_version', 1);
+        $paramsHash = md5(strtolower($request->fullUrl()));
+        $cacheKey = "products:search:v{$version}:{$paramsHash}:page:{$request->get('page',1)}";
+
+        $products = Cache::remember($cacheKey, 60, function () use ($query) {
+            return $query->withAvg('reviews', 'rating')
+            ->select(
+                'product_id',
+                'name',
+                'slug',
+                'price',
+                'images',
+                'created_at'
+            )
+            ->paginate(20);
+        });
+
+        // Normalize average rating into `average_rating` float
+        $products->getCollection()->transform(function ($p) {
+            $p->average_rating = $p->reviews_avg_rating ? round((float) $p->reviews_avg_rating, 2) : null;
+            return $p;
+        });
 
         return response()->json($products);
     }
