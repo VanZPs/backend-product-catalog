@@ -70,48 +70,77 @@ class AdminDashboardController extends Controller
     }
 
     /**
-     * Chart data: products grouped by category
+     * Chart data: products grouped by category (SRS-07)
      */
     public function productsByCategory()
     {
-        $data = Product::select('category', DB::raw('count(*) as total'))
-            ->groupBy('category')
-            ->get();
+        $data = Product::select('category_id')
+            ->with('category:category_id,name')
+            ->whereNotNull('category_id')
+            ->where('is_active', true)
+            ->get()
+            ->groupBy('category_id')
+            ->map(function ($group) {
+                $category = $group->first()->category;
+                return [
+                    'category_id' => $group->first()->category_id,
+                    'category_name' => $category ? $category->name : 'Unknown',
+                    'count' => $group->count(),
+                ];
+            })
+            ->values();
 
-        return response()->json($data);
+        return response()->json(['data' => $data]);
     }
 
     /**
-     * Chart data: sellers grouped by province
+     * Chart data: sellers grouped by province (SRS-07)
      */
     public function sellersByProvince()
     {
-        $data = Seller::select('province_id', DB::raw('count(*) as total'))
+        $data = Seller::select('province_id')
+            ->selectRaw('count(*) as count')
+            ->where('status', 'approved')
             ->groupBy('province_id')
-            ->get();
+            ->orderByRaw('count DESC')
+            ->get()
+            ->map(function ($item) {
+                // Get province name from laravolt
+                $province = DB::table('lv_provinces')
+                    ->where('id', $item->province_id)
+                    ->value('name');
+                
+                return [
+                    'province_id' => $item->province_id,
+                    'province_name' => $province ?: 'Unknown',
+                    'count' => $item->count,
+                ];
+            });
 
-        return response()->json($data);
+        return response()->json(['data' => $data]);
     }
 
+    /**
+     * Chart data: seller status distribution (SRS-07)
+     */
     public function sellersStatus()
     {
-        $total = Seller::count();
-        $pending = Seller::where('status', 'pending')->count();
-        $approved = Seller::where('status', 'approved')->count();
-        $rejected = Seller::where('status', 'rejected')->count();
+        $data = [
+            ['status' => 'active', 'count' => Seller::where('is_active', true)->count()],
+            ['status' => 'inactive', 'count' => Seller::where('is_active', false)->count()],
+            ['status' => 'pending', 'count' => Seller::where('status', 'pending')->count()],
+        ];
 
-        return response()->json([
-            'total' => $total,
-            'pending' => $pending,
-            'approved' => $approved,
-            'rejected' => $rejected,
-        ]);
+        return response()->json(['data' => $data]);
     }
 
+    /**
+     * Chart data: total unique reviewers (SRS-07)
+     */
     public function totalReviewers()
     {
         // Count distinct reviewer emails
-        $count = Review::select('email')->distinct()->count('email');
-        return response()->json(['total_reviewers' => $count]);
+        $count = Review::distinct('email')->count('email');
+        return response()->json(['data' => ['count' => $count]]);
     }
 }

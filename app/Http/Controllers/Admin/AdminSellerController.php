@@ -17,8 +17,11 @@ class AdminSellerController extends Controller
     // List all sellers (with optional status filter)
     public function index(Request $request)
     {
-        $q = Seller::with('user:id,name,email')
-            ->select('id', 'user_id', 'store_name', 'status', 'is_active', 'created_at')
+        $q = Seller::with([
+                'user:user_id,name,email',
+                'province:id,name'
+            ])
+            ->select('seller_id', 'user_id', 'store_name', 'province_id', 'phone', 'status', 'is_active', 'updated_at', 'created_at')
             ->orderBy('created_at', 'desc');
 
         if ($status = $request->query('status')) {
@@ -168,9 +171,9 @@ class AdminSellerController extends Controller
         $seller->status = 'active';
         $seller->save();
 
-        // Redirect to frontend verification success (or return json)
-        $redirect = config('app.url') . '/seller/verified?seller=' . $seller->seller_id;
-        return response()->json(['message' => 'Seller verified', 'redirect_url' => $redirect]);
+        // Redirect to frontend verification success page (use frontend_url, not app.url)
+        $redirect = config('app.frontend_url') . '/seller/verified?seller=' . $seller->seller_id;
+        return redirect($redirect);
     }
 
     // Stream KTP file (private disk) for admin preview

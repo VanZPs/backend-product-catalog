@@ -1,26 +1,134 @@
-<h2>Top Rated Products</h2>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            font-size: 12px;
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+        .title {
+            font-size: 14px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .info {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 20px;
+        }
+        th {
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 10px;
+            text-align: left;
+            font-weight: bold;
+            font-size: 11px;
+        }
+        td {
+            border: 1px solid #ccc;
+            padding: 8px;
+            font-size: 11px;
+        }
+        tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        .footer {
+            font-size: 10px;
+            color: #999;
+            margin-top: 30px;
+            text-align: center;
+        }
+        .note {
+            font-size: 10px;
+            color: #666;
+            font-style: italic;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">SRS-MartPlace-11</div>
+        <div class="title">Laporan Daftar Produk Berdasarkan Rating</div>
+        <div class="info">
+            Tanggal dibuat: {{ \Carbon\Carbon::now()->format('d-m-Y') }} oleh {{ auth()->user()->name ?? 'System' }}
+        </div>
+    </div>
 
-<table width="100%" border="1" cellspacing="0" cellpadding="4">
-    <thead>
-        <tr>
-            <th>Product</th>
-            <th>Seller</th>
-            <th>Province</th>
-            <th>Category</th>
-            <th>Price</th>
-            <th>Avg Rating</th>
-        </tr>
-    </thead>
-    <tbody>
-        @foreach($data as $row)
+    <table>
+        <thead>
             <tr>
-                <td>{{ $row->name }}</td>
-                <td>{{ optional($row->seller)->store_name ?? $row->seller_id }}</td>
-                <td>{{ optional($row->seller)->province_id ?? '' }}</td>
-                <td>{{ $row->category }}</td>
-                <td>Rp {{ number_format($row->price,0,',','.') }}</td>
-                <td>{{ number_format($row->avg_rating,2) }}</td>
+                <th style="width: 5%;">No</th>
+                <th style="width: 18%;">Produk</th>
+                <th style="width: 12%;">Kategori</th>
+                <th style="width: 12%;">Harga</th>
+                <th style="width: 8%;">Rating</th>
+                <th style="width: 22%;">Nama Toko</th>
+                <th style="width: 23%;">Propinsi</th>
             </tr>
-        @endforeach
-    </tbody>
-</table>
+        </thead>
+        <tbody>
+            @php
+                // Group by province for rating source
+                $groupedProducts = collect($data)
+                    ->groupBy(function ($product) {
+                        // Get province from reviews (where rating comes from)
+                        $province = \DB::table('reviews')
+                            ->where('product_id', $product->product_id)
+                            ->first()?->province_id;
+                        
+                        if ($province) {
+                            return \DB::table('lv_provinces')
+                                ->where('code', $province)
+                                ->value('name') ?? $province;
+                        }
+                        
+                        // Fallback to seller's province
+                        return \DB::table('lv_provinces')
+                            ->where('code', $product->seller->province_id ?? '')
+                            ->value('name') ?? 'N/A';
+                    })
+                    ->sortKeys();
+                $counter = 0;
+            @endphp
+            @forelse($groupedProducts as $province => $products)
+                @foreach($products as $product)
+                    @php $counter++ @endphp
+                    <tr>
+                        <td>{{ $counter }}</td>
+                        <td>{{ substr($product->name, 0, 30) }}{{ strlen($product->name) > 30 ? '...' : '' }}</td>
+                        <td>{{ $product->category?->name ?? 'N/A' }}</td>
+                        <td>Rp {{ number_format($product->price, 0, ',', '.') }}</td>
+                        <td>{{ number_format($product->avg_rating, 1) }}/5</td>
+                        <td>{{ $product->seller?->store_name ?? 'N/A' }}</td>
+                        <td>{{ $province }}</td>
+                    </tr>
+                @endforeach
+            @empty
+                <tr>
+                    <td colspan="7" style="text-align: center;">Tidak ada data</td>
+                </tr>
+            @endforelse
+        </tbody>
+    </table>
+
+    <div class="note">
+        ***) Propinsi diisikan propinsi pemberi rating
+    </div>
+
+    <div class="footer">
+        Generated by SRS-MartPlace System
+    </div>
+</body>
+</html>

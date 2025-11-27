@@ -42,4 +42,16 @@ class AdminSellerManagementController extends Controller
             'seller' => $seller,
         ]);
     }
-}
+
+    // Toggle seller active/inactive status
+    public function toggleStatus(Seller $seller)
+    {
+        $seller->update([
+            'is_active' => !$seller->is_active
+        ]);
+
+        return response()->json([
+            'message' => 'Seller status toggled successfully',
+            'seller' => $seller,
+        ]);
+    }
