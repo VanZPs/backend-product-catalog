@@ -23,23 +23,32 @@ class ProductPublicController extends Controller
             $idColumn = Schema::hasColumn('products', 'product_id') ? 'product_id' : 'id';
             $selectId = $idColumn === 'product_id' ? 'product_id' : DB::raw('id as product_id');
 
-            return Product::withAvg('reviews', 'rating')
+            return Product::with('seller.city', 'seller.province', 'category')
+                ->withAvg('reviews', 'rating')
                 ->select(
                     $selectId,
                     'name',
                     'slug',
                     'price',
+                    'stock',
+                    'category',
+                    'category_id',
                     'images',
                     'primary_image',
+                    'seller_id',
                     'created_at'
                 )
+                ->where('is_active', true)
                 ->orderBy($idColumn, 'desc')
                 ->paginate(20);
         });
 
-        // Normalize average rating into `average_rating` float
+        // Normalize average rating into `average_rating` float and add seller location
         $products->getCollection()->transform(function ($p) {
-            $p->average_rating = $p->reviews_avg_rating ? round((float) $p->reviews_avg_rating, 2) : null;
+            $p->average_rating = $p->reviews_avg_rating ? round((float) $p->reviews_avg_rating, 2) : 0;
+            $p->city = $p->seller?->city?->name;
+            $p->province = $p->seller?->province?->name;
+            
             return $p;
         });
 
@@ -48,7 +57,10 @@ class ProductPublicController extends Controller
 
     public function show($slug)
     {
-        $product = Product::where('slug', $slug)->firstOrFail();
+        $product = Product::where('slug', $slug)
+            ->with(['seller.city', 'seller.province', 'reviews', 'category'])
+            ->withAvg('reviews', 'rating')
+            ->firstOrFail();
 
         // only increment if the visitor column exists (defensive for mixed migration states)
         if (Schema::hasColumn('products', 'visitor')) {
@@ -60,27 +72,26 @@ class ProductPublicController extends Controller
             }
         }
 
-        if (!$product) {
-            return response()->json([
-                'message' => 'Product not found'
-            ], 404);
-        }
-
         return response()->json([
-            'product_id'  => $product->product_id,
-            'name'        => $product->name,
-            'slug'        => $product->slug,
-            'description' => $product->description,
-            'price'       => $product->price,
-            'stock'       => $product->stock,
-            'images'      => $product->images,
-            'seller'      => [
+            'product_id'      => $product->product_id,
+            'name'            => $product->name,
+            'slug'            => $product->slug,
+            'description'     => $product->description,
+            'category'        => $product->category,
+            'price'           => $product->price,
+            'stock'           => $product->stock,
+            'primary_image'   => $product->primary_image,
+            'images'          => $product->images,
+            'average_rating'  => $product->reviews_avg_rating ? round((float) $product->reviews_avg_rating, 2) : 0,
+            'seller'          => [
                 'seller_id'   => $product->seller->seller_id,
                 'store_name'  => $product->seller->store_name,
+                'store_description' => $product->seller->store_description,
+                'phone'       => $product->seller->phone,
                 'city'        => $product->seller->city?->name,
                 'province'    => $product->seller->province?->name,
             ],
-            'created_at'  => $product->created_at,
+            'created_at'      => $product->created_at,
         ]);
     }
 
@@ -92,6 +103,11 @@ class ProductPublicController extends Controller
         // is_active filter
         if (Schema::hasColumn('products', 'is_active')) {
             $query->where('is_active', true);
+        }
+
+        // Filter by category_id
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->category_id);
         }
 
         // Filter by seller store_name (case-insensitive)
@@ -112,6 +128,18 @@ class ProductPublicController extends Controller
         if ($request->filled('city_id')) {
             $query->whereHas('seller', function ($sq) use ($request) {
                 $sq->where('city_id', $request->city_id);
+            });
+        }
+
+        if ($request->filled('district_id')) {
+            $query->whereHas('seller', function ($sq) use ($request) {
+                $sq->where('district_id', $request->district_id);
+            });
+        }
+
+        if ($request->filled('village_id')) {
+            $query->whereHas('seller', function ($sq) use ($request) {
+                $sq->where('village_id', $request->village_id);
             });
         }
 
@@ -144,6 +172,11 @@ class ProductPublicController extends Controller
                 $query->orderBy('price', 'desc');
                 break;
 
+            case 'rating_desc':
+                $query->withAvg('reviews', 'rating')
+                    ->orderByDesc('reviews_avg_rating');
+                break;
+
             case 'newest':
             default:
             $query->orderBy('product_id', 'desc');
@@ -156,21 +189,30 @@ class ProductPublicController extends Controller
         $cacheKey = "products:search:v{$version}:{$paramsHash}:page:{$request->get('page',1)}";
 
         $products = Cache::remember($cacheKey, 60, function () use ($query) {
-            return $query->withAvg('reviews', 'rating')
-            ->select(
-                'product_id',
-                'name',
-                'slug',
-                'price',
-                'images',
-                'created_at'
-            )
-            ->paginate(20);
+            return $query->with('seller.city', 'seller.province', 'category')
+                ->withAvg('reviews', 'rating')
+                ->select(
+                    'product_id',
+                    'name',
+                    'slug',
+                    'price',
+                    'stock',
+                    'category',
+                    'category_id',
+                    'images',
+                    'primary_image',
+                    'seller_id',
+                    'created_at'
+                )
+                ->paginate(20);
         });
 
-        // Normalize average rating into `average_rating` float
+        // Normalize average rating into `average_rating` float and add seller location
         $products->getCollection()->transform(function ($p) {
-            $p->average_rating = $p->reviews_avg_rating ? round((float) $p->reviews_avg_rating, 2) : null;
+            $p->average_rating = $p->reviews_avg_rating ? round((float) $p->reviews_avg_rating, 2) : 0;
+            $p->city = $p->seller?->city?->name;
+            $p->province = $p->seller?->province?->name;
+            
             return $p;
         });
 

@@ -25,8 +25,8 @@ class ProductController extends Controller
         }
 
         $products = $seller->products()
-            ->select('id', 'name', 'slug', 'price', 'stock', 'images', 'created_at')
-            ->orderBy('id', 'desc')
+            ->select('product_id', 'name', 'slug', 'price', 'stock', 'images', 'is_active', 'created_at')
+            ->orderBy('product_id', 'desc')
             ->get();
 
         return response()->json($products);
@@ -43,6 +43,7 @@ class ProductController extends Controller
             'name'        => 'required|string|max:255',
             'description' => 'nullable|string',
             'category'    => 'nullable|string|max:100',
+            'category_id' => 'nullable|uuid|exists:categories,category_id',
             'price'       => 'required|numeric|min:0',
             'stock'       => 'required|integer|min:0',
 
@@ -75,6 +76,7 @@ class ProductController extends Controller
             'price'       => $validated['price'],
             'stock'       => $validated['stock'],
             'category'    => $validated['category'] ?? null,
+            'category_id' => $validated['category_id'] ?? null,
             'images'      => $imagePaths,
             'primary_image' => count($imagePaths) ? $imagePaths[0] : null,
         ]);
@@ -118,6 +120,7 @@ class ProductController extends Controller
             'name'        => 'nullable|string|max:255',
             'description' => 'nullable|string',
             'category'    => 'nullable|string|max:100',
+            'category_id' => 'nullable|uuid|exists:categories,category_id',
             'price'       => 'nullable|numeric|min:0',
             'stock'       => 'nullable|integer|min:0',
             // If images are provided on update, enforce min 2 to satisfy SRS
@@ -131,6 +134,7 @@ class ProductController extends Controller
             'name'        => $validated['name'] ?? null,
             'description' => $validated['description'] ?? null,
             'category'    => $validated['category'] ?? null,
+            'category_id' => $validated['category_id'] ?? null,
             'price'       => $validated['price'] ?? null,
             'stock'       => $validated['stock'] ?? null,
         ]));
