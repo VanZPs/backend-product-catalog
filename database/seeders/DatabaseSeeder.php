@@ -9,11 +9,12 @@ class DatabaseSeeder extends Seeder
     public function run()
     {
         $this->call([
-            IndonesiaMinimalSeeder::class,
+            // IndonesiaMinimalSeeder::class,
+            CategorySeeder::class,
             UserAdminSeeder::class,
-            SampleUserSeeder::class,
-            SampleSellerSeeder::class,
-            SampleProductSeeder::class,
+            // SampleUserSeeder::class,
+            // SampleSellerSeeder::class,
+            // SampleProductSeeder::class,
         ]);
     }
 }

@@ -128,20 +128,29 @@ return new class extends Migration
 
     public function down(): void
     {
-        Schema::table('users', function (Blueprint $table) {
-            $table->dropColumn('uuid');
-        });
+        // Safely drop uuid columns if they exist
+        if (Schema::hasColumn('users', 'uuid')) {
+            Schema::table('users', function (Blueprint $table) {
+                $table->dropColumn('uuid');
+            });
+        }
 
-        Schema::table('sellers', function (Blueprint $table) {
-            $table->dropColumn('uuid');
-        });
+        if (Schema::hasColumn('sellers', 'uuid')) {
+            Schema::table('sellers', function (Blueprint $table) {
+                $table->dropColumn('uuid');
+            });
+        }
 
-        Schema::table('products', function (Blueprint $table) {
-            $table->dropColumn('uuid');
-        });
+        if (Schema::hasColumn('products', 'uuid')) {
+            Schema::table('products', function (Blueprint $table) {
+                $table->dropColumn('uuid');
+            });
+        }
 
-        Schema::table('reviews', function (Blueprint $table) {
-            $table->dropColumn('uuid');
-        });
+        if (Schema::hasColumn('reviews', 'uuid')) {
+            Schema::table('reviews', function (Blueprint $table) {
+                $table->dropColumn('uuid');
+            });
+        }
     }
 };
