@@ -40,8 +40,8 @@ class ReportController extends Controller
     {
         $status = $request->query('status');
 
-        $query = Seller::with('user')
-            ->select('id','user_id','store_name','status','is_active','province_id');
+        $query = Seller::with('user:user_id,name,email')
+            ->select('seller_id','user_id','store_name','status','is_active','province_id','created_at');
 
         if ($status) {
             $query->where('status', $status);
@@ -61,13 +61,15 @@ class ReportController extends Controller
                 ->header('Content-Disposition', 'inline; filename="platform-sellers.pdf"');
         }
 
-        return response()->json(['sellers' => $sellers]);
+        return response()->json(['data' => $sellers]);
     }
 
     public function platformSellersByProvinceReport(Request $request)
     {
-        $data = Seller::select('province_id', DB::raw('COUNT(*) as total'))
-            ->groupBy('province_id')
+        $data = Seller::with('user:user_id,name,email')
+            ->select('seller_id','user_id','store_name','province_id','phone','is_active','created_at')
+            ->where('status', 'approved')
+            ->orderBy('province_id')
             ->get();
 
         if ($request->query('format') === 'pdf') {
@@ -81,15 +83,16 @@ class ReportController extends Controller
                 ->header('Content-Disposition', 'inline; filename="sellers-by-province.pdf"');
         }
 
-        return response()->json($data);
+        return response()->json(['data' => $data]);
     }
 
     public function platformTopRatedProductsReport(Request $request)
     {
-        $data = Product::with('seller')
-            ->select('products.product_id','products.name','products.category','products.price','products.seller_id', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
+        $data = Product::with(['seller:seller_id,store_name', 'category:category_id,name'])
+            ->select('products.product_id','products.name','products.category_id','products.price','products.seller_id', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
             ->leftJoin('reviews', 'reviews.product_id', '=', 'products.product_id')
-            ->groupBy('products.product_id','products.name','products.category','products.price','products.seller_id')
+            ->where('products.is_active', true)
+            ->groupBy('products.product_id','products.name','products.category_id','products.price','products.seller_id')
             ->orderByDesc('avg_rating')
             ->get();
 
@@ -104,7 +107,7 @@ class ReportController extends Controller
                 ->header('Content-Disposition', 'inline; filename="top-rated-products.pdf"');
         }
 
-        return response()->json($data);
+        return response()->json(['data' => $data]);
     }
 
     // Seller specific reports (JSON for MVP)
@@ -112,9 +115,17 @@ class ReportController extends Controller
     {
         $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
         $data = Product::where('seller_id', $seller->seller_id)
-            ->select('products.product_id','products.name','products.category','products.price','products.stock', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
+            ->with('category')
+            ->select(
+                'products.product_id',
+                'products.name',
+                'products.category_id',
+                'products.price',
+                'products.stock',
+                DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating')
+            )
             ->leftJoin('reviews','reviews.product_id','=','products.product_id')
-            ->groupBy('products.product_id','products.name','products.category','products.price','products.stock')
+            ->groupBy('products.product_id','products.name','products.category_id','products.price','products.stock')
             ->orderByDesc('stock')
             ->get();
 
@@ -136,9 +147,17 @@ class ReportController extends Controller
     {
         $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
         $data = Product::where('seller_id', $seller->seller_id)
-            ->select('products.product_id','products.name','products.category','products.price','products.stock', DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating'))
+            ->with('category')
+            ->select(
+                'products.product_id',
+                'products.name',
+                'products.category_id',
+                'products.price',
+                'products.stock',
+                DB::raw('COALESCE(AVG(reviews.rating),0) as avg_rating')
+            )
             ->leftJoin('reviews','reviews.product_id','=','products.product_id')
-            ->groupBy('products.product_id','products.name','products.category','products.price','products.stock')
+            ->groupBy('products.product_id','products.name','products.category_id','products.price','products.stock')
             ->orderByDesc('avg_rating')
             ->get();
 
@@ -161,8 +180,16 @@ class ReportController extends Controller
         $seller = Seller::where('user_id', $request->user()->user_id)->firstOrFail();
         $data = Product::where('seller_id', $seller->seller_id)
             ->where('stock', '<', 2)
-            ->select('name','category','price','stock')
-            ->orderBy('stock','asc')
+            ->with('category')
+            ->select(
+                'products.product_id',
+                'products.name',
+                'products.category_id',
+                'products.price',
+                'products.stock'
+            )
+            ->orderBy('category_id', 'asc')
+            ->orderBy('name', 'asc')
             ->get();
 
         if ($request->query('format') === 'pdf') {

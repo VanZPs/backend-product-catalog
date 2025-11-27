@@ -81,9 +81,16 @@ class SellerDashboardController extends Controller
 
         $productIds = Product::where('seller_id', $seller->seller_id)->pluck('product_id');
 
-        $data = Review::whereIn('product_id', $productIds)
-            ->select('product_id', DB::raw('AVG(rating) as avg_rating'), DB::raw('COUNT(*) as total_reviews'))
-            ->groupBy('product_id')
+        $data = Review::whereIn('reviews.product_id', $productIds)
+            ->join('products', 'reviews.product_id', '=', 'products.product_id')
+            ->select(
+                'reviews.product_id',
+                'products.name',
+                DB::raw('AVG(reviews.rating) as avg_rating'),
+                DB::raw('COUNT(*) as total_reviews')
+            )
+            ->groupBy('reviews.product_id', 'products.name')
+            ->orderByDesc('avg_rating')
             ->get();
 
         return response()->json($data);
@@ -100,6 +107,24 @@ class SellerDashboardController extends Controller
             ->groupBy('province_id')
             ->get();
 
-        return response()->json($data);
+        // Enrich dengan province names menggunakan Laravolt API
+        $enriched = $data->map(function ($item) {
+            try {
+                $province = \Laravolt\Indonesia\Models\Province::where('code', $item->province_id)->first();
+                return [
+                    'province_code' => $item->province_id,
+                    'province_name' => $province?->name ?? 'Tidak Diketahui',
+                    'total' => $item->total,
+                ];
+            } catch (\Exception $e) {
+                return [
+                    'province_code' => $item->province_id,
+                    'province_name' => 'Tidak Diketahui',
+                    'total' => $item->total,
+                ];
+            }
+        });
+
+        return response()->json($enriched);
     }
 }
