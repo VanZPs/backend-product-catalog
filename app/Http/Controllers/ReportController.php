@@ -102,34 +102,30 @@ class ReportController extends Controller
     public function platformTopRatedProductsReport(Request $request)
     {
         try {
-            $data = Product::with(['category:category_id,name', 'seller:seller_id,store_name'])
-                ->select(
-                    'products.product_id',
-                    'products.name',
-                    'products.category_id',
-                    'products.price',
-                    'products.seller_id',
-                    DB::raw('COALESCE(AVG(reviews.rating), 0) as avg_rating')
-                )
-                ->leftJoin('reviews', 'reviews.product_id', '=', 'products.product_id')
-                ->where('products.is_active', true)
-                ->groupBy('products.product_id', 'products.name', 'products.category_id', 'products.price', 'products.seller_id')
-                ->orderByDesc('avg_rating')
-                ->get();
-
-            // Add reviewer province info with name
-            $data->each(function ($product) {
-                $review = Review::with('province:code,name')
-                    ->where('product_id', $product->product_id)
-                    ->orderByDesc('created_at')
-                    ->first();
-                
-                if ($review && $review->province) {
-                    $product->reviewer_province = $review->province->name;
-                } else {
-                    $product->reviewer_province = 'N/A';
+            // Get products with reviews, calculating average rating
+            $data = Product::with([
+                'category:category_id,name',
+                'seller:seller_id,store_name',
+                'reviews' => function ($query) {
+                    $query->with('province:code,name')
+                        ->orderByDesc('created_at');
                 }
-            });
+            ])
+                ->where('products.is_active', true)
+                ->get()
+                ->filter(function ($product) {
+                    // Only include products with reviews
+                    return $product->reviews->count() > 0;
+                })
+                ->map(function ($product) {
+                    // Calculate average rating and add it
+                    $product->avg_rating = $product->reviews->avg('rating');
+                    // Get latest review with province
+                    $product->latest_review = $product->reviews->first();
+                    return $product;
+                })
+                ->sortByDesc('avg_rating')
+                ->values();
 
             $pdf = Pdf::loadView('pdf.admin-products-by-rating-formal', [
                 'data' => $data,
