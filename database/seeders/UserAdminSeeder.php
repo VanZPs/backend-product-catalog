@@ -10,6 +10,12 @@ class UserAdminSeeder extends Seeder
 {
     public function run()
     {
+        // Check jika admin sudah ada
+        if (User::where('email', 'admin@example.com')->exists()) {
+            $this->command->info('Admin user sudah ada, skip seeding.');
+            return;
+        }
+
         User::create([
             'name' => 'Super Admin',
             'email' => 'admin@example.com',
