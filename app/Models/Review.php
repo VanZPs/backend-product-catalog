@@ -37,7 +37,7 @@ class Review extends Model
 
     public function province()
     {
-        return $this->belongsTo(Provinsi::class, 'province_id');
+        return $this->belongsTo(Provinsi::class, 'province_id', 'code');
     }
 
     /**

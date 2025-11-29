@@ -76,28 +76,41 @@ class PdfReportController extends Controller
     public function productsByRatingReport(Request $request)
     {
         try {
-            // Fetch products sorted by rating (highest first)
-            $data = Product::with(['category:category_id,name', 'seller:seller_id,store_name'])
+            // Fetch products with latest review containing province info
+            $data = Product::with([
+                'category:category_id,name',
+                'seller:seller_id,store_name',
+                'reviews' => function ($query) {
+                    $query->with('province:code,name')
+                        ->orderByDesc('created_at')
+                        ->limit(1);
+                }
+            ])
                 ->select(
                     'products.product_id',
                     'products.name',
                     'products.category_id',
                     'products.price',
                     'products.seller_id',
-                    DB::raw('COALESCE(AVG(reviews.rating), 0) as avg_rating')
+                    DB::raw('COALESCE(AVG(reviews_avg.rating), 0) as avg_rating')
                 )
-                ->leftJoin('reviews', 'reviews.product_id', '=', 'products.product_id')
+                ->leftJoinSub(
+                    Review::selectRaw('product_id, AVG(rating) as rating')
+                        ->groupBy('product_id'),
+                    'reviews_avg',
+                    'reviews_avg.product_id',
+                    '=',
+                    'products.product_id'
+                )
                 ->where('products.is_active', true)
                 ->groupBy('products.product_id', 'products.name', 'products.category_id', 'products.price', 'products.seller_id')
                 ->orderByDesc('avg_rating')
                 ->get();
 
-            // Add reviewer province info to each product
+            // Attach latest review province to each product
             $data->each(function ($product) {
-                $reviewerProvince = Review::where('product_id', $product->product_id)
-                    ->orderByDesc('created_at')
-                    ->value('province_id') ?? 'N/A';
-                $product->reviewer_province = $reviewerProvince;
+                $latestReview = $product->reviews->first();
+                $product->latest_review = $latestReview;
             });
 
             $pdf = Pdf::loadView('pdf.admin-products-by-rating-formal', [
