@@ -10,8 +10,8 @@ class ValidationController extends Controller
 {
     /**
      * Simple uniqueness check used by frontend async validation.
-     * Expects JSON: { field: string, value: string }
-     * Returns: { exists: boolean }
+     * Expects query params: field and value
+     * Returns: { available: boolean } - true if field is available (not taken), false if already exists
      */
     public function unique(Request $request)
     {
@@ -19,7 +19,7 @@ class ValidationController extends Controller
         $value = $request->input('value');
 
         if (empty($field) || is_null($value)) {
-            return response()->json(['exists' => false]);
+            return response()->json(['available' => true]);
         }
 
         $exists = false;
@@ -42,6 +42,7 @@ class ValidationController extends Controller
                 $exists = false;
         }
 
-        return response()->json(['exists' => (bool) $exists]);
+        // Return available = !exists (available if NOT exists)
+        return response()->json(['available' => !$exists]);
     }
 }

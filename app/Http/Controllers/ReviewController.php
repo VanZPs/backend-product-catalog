@@ -68,8 +68,13 @@ class ReviewController extends Controller
         // Load product relation for snapshot and notify reviewer via email
         $review->load('product');
         try {
+            // Create a simple notifiable object with name property
+            $notifiable = new \stdClass();
+            $notifiable->email = $review->email;
+            $notifiable->name = $review->name;
+            
             Notification::route('mail', $review->email)
-                ->notify(new ReviewThankYouNotification($review->toSnapshot()));
+                ->notify(new ReviewThankYouNotification($review->toSnapshot(), $notifiable));
         } catch (\Throwable $e) {
             Log::error('Failed to send ReviewThankYouNotification', ['review_id' => $review->review_id ?? null, 'error' => $e->getMessage()]);
             // continue silently; review has been saved
