@@ -76,42 +76,26 @@ class PdfReportController extends Controller
     public function productsByRatingReport(Request $request)
     {
         try {
-            // Fetch products with latest review containing province info
+            // Fetch products with reviews and calculate rating
             $data = Product::with([
                 'category:category_id,name',
                 'seller:seller_id,store_name',
                 'reviews' => function ($query) {
                     $query->with('province:code,name')
-                        ->orderByDesc('created_at')
-                        ->limit(1);
+                        ->orderByDesc('created_at');
                 }
             ])
-                ->select(
-                    'products.product_id',
-                    'products.name',
-                    'products.category_id',
-                    'products.price',
-                    'products.seller_id',
-                    DB::raw('COALESCE(AVG(reviews_avg.rating), 0) as avg_rating')
-                )
-                ->leftJoinSub(
-                    Review::selectRaw('product_id, AVG(rating) as rating')
-                        ->groupBy('product_id'),
-                    'reviews_avg',
-                    'reviews_avg.product_id',
-                    '=',
-                    'products.product_id'
-                )
                 ->where('products.is_active', true)
-                ->groupBy('products.product_id', 'products.name', 'products.category_id', 'products.price', 'products.seller_id')
-                ->orderByDesc('avg_rating')
-                ->get();
-
-            // Attach latest review province to each product
-            $data->each(function ($product) {
-                $latestReview = $product->reviews->first();
-                $product->latest_review = $latestReview;
-            });
+                ->get()
+                ->map(function ($product) {
+                    // Calculate average rating
+                    $product->avg_rating = $product->reviews->isEmpty() ? 0 : $product->reviews->avg('rating');
+                    // Get latest review with province
+                    $product->latest_review = $product->reviews->first();
+                    return $product;
+                })
+                ->sortByDesc('avg_rating')
+                ->values();
 
             $pdf = Pdf::loadView('pdf.admin-products-by-rating-formal', [
                 'data' => $data,

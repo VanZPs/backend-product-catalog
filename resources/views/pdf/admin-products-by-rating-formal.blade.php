@@ -25,7 +25,11 @@
             <td class="text-right">Rp {{ number_format($product->price ?? 0, 0, ',', '.') }}</td>
             <td class="text-center">{{ number_format($product->avg_rating ?? 0, 1) }}</td>
             <td>{{ $product->seller->store_name ?? '-' }}</td>
-            <td>{{ $product->latest_review?->province?->name ?? '-' }}</td>
+            @if($product->latest_review && $product->latest_review->province)
+                <td>{{ $product->latest_review->province->name }}</td>
+            @else
+                <td>-</td>
+            @endif
         </tr>
         @empty
         <tr>
