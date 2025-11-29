@@ -23,7 +23,6 @@ class Product extends Model
         'name',
         'slug',
         'description',
-        'category',
         'category_id',
         'price',
         'stock',
@@ -37,7 +36,26 @@ class Product extends Model
         'images'   => 'array', // JSON array
         'price'    => 'decimal:2',
         'visitor'  => 'integer',
+        'category_id' => 'string',
     ];
+
+    /**
+     * Override getAttribute to handle 'category' attribute shadowing the relationship
+     */
+    public function getAttribute($key)
+    {
+        // If requesting 'category' and it's not loaded as attribute, return the relationship
+        if ($key === 'category') {
+            // If the relation is loaded, return it
+            if ($this->relationLoaded('category')) {
+                return $this->getRelation('category');
+            }
+            // Otherwise, call the method to get it
+            return $this->category()->first();
+        }
+        
+        return parent::getAttribute($key);
+    }
 
     /**
      * Get the primary image URL
@@ -124,7 +142,10 @@ class Product extends Model
 
     public function category(): BelongsTo
     {
-        return $this->belongsTo(Category::class, 'category_id', 'category_id');
+        // BelongsTo signature: belongsTo(RelatedModel, foreign_key, owner_key)
+        // foreign_key = the key in this table that points to the related table
+        // owner_key = the key in the related table being pointed to
+        return $this->belongsTo(Category::class, 'category_id');
     }
 
     public function reviews()
